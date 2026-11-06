@@ -147,6 +147,17 @@ public class MainActivity extends Activity {
 
   // On frames that start Wi-Fi after boot, the error screen is up when Wi-Fi connects. Retry then,
   // and correct the "Connect to Wi-Fi?" text, instead of waiting for the next error.
+  // Frames without an RTC lose time while suspended; re-read network time whenever the screen comes on.
+  private final BroadcastReceiver screenOn = new BroadcastReceiver() {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+      // A late SCREEN_ON can arrive as the screen goes off; only sync when it is really on.
+      if (!((android.os.PowerManager) getSystemService(POWER_SERVICE)).isInteractive()) return;
+      final Context app = getApplicationContext();
+      new Thread(() -> SleepSchedule.syncTime(app), "time-sync").start();
+    }
+  };
+
   private final BroadcastReceiver networkChange = new BroadcastReceiver() {
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -190,6 +201,7 @@ public class MainActivity extends Activity {
     applyHomeFlag(getIntent());
     applyBootanimFlag(getIntent());
     applyBootFlag(getIntent());
+    SleepSchedule.apply(this, getIntent());
     keepNavigationEnabled();
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         | WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -331,6 +343,7 @@ public class MainActivity extends Activity {
     IntentFilter connectivity = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
     connectivity.addAction(Intent.ACTION_TIME_CHANGED); // network time arrived after a power cut
     registerReceiver(networkChange, connectivity);
+    registerReceiver(screenOn, new IntentFilter(Intent.ACTION_SCREEN_ON));
   }
 
   @Override
@@ -374,6 +387,7 @@ public class MainActivity extends Activity {
     applyBootFlag(intent);
     applyMenuButtonFlag(intent);
     applyBootanimFlag(intent);
+    SleepSchedule.apply(this, intent);
     String url = urlFrom(intent);
     if (url != null) {
       closePortal();
@@ -807,6 +821,7 @@ public class MainActivity extends Activity {
   @Override
   protected void onDestroy() {
     unregisterReceiver(networkChange);
+    unregisterReceiver(screenOn);
     handler.removeCallbacksAndMessages(null);
     if (web != null) web.destroy();
     super.onDestroy();

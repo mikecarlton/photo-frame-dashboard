@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clock</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden; }
+  body {
+    font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center; cursor: none; user-select: none;
+  }
+  .label { font-size: 5vw; color: #bbb; }
+  #day { font-size: 15vw; font-weight: 700; line-height: 1; margin: 0.5vh 0 4vh; }
+  #time { font-size: 6vw; line-height: 1.25; }
+  #time b { color: #ffd54a; font-weight: 700; }
+  #weather { display: flex; align-items: center; gap: 2.5vw; margin-top: 5vh; font-size: 4.6vw; }
+  #weather[hidden] { display: none; }
+  #temp { font-weight: 700; }
+  #icon svg { width: 10vw; height: 10vw; display: block; }
+</style>
+</head>
+<body>
+  <div class="label">Today is</div>
+  <div id="day"></div>
+  <div id="time"></div>
+  <div id="weather" hidden><span id="wtext"></span><span id="icon"></span><span id="temp"></span></div>
+
+<script>
+'use strict';
+var LAT = 53.30, LON = -6.27;
+var API = 'http://api.open-meteo.com/v1/forecast?latitude=' + LAT + '&longitude=' + LON +
+  '&daily=weather_code&current=temperature_2m&temperature_unit=fahrenheit&timezone=auto&forecast_days=1';
+var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+var SUN = '<circle cx="32" cy="32" r="12" fill="#ffd54a"/><g stroke="#ffd54a" stroke-width="4" stroke-linecap="round">' +
+  '<path d="M32 6v8M32 50v8M6 32h8M50 32h8M13.6 13.6l5.7 5.7M44.7 44.7l5.7 5.7M13.6 50.4l5.7-5.7M44.7 19.3l5.7-5.7"/></g>';
+var CLOUD = '<path d="M20 50h26a10 10 0 0 0 0-20 14 14 0 0 0-27-3A11 11 0 0 0 20 50z" fill="#e8e8e8"/>';
+var SMALLSUN = '<g transform="translate(-6 -8) scale(.75)">' + SUN + '</g>';
+function drops(color, glyph) {
+  return '<g stroke="' + color + '" stroke-width="3.5" stroke-linecap="round">' + glyph + '</g>';
+}
+var ICONS = {
+  sun: SUN,
+  partsun: SMALLSUN + CLOUD,
+  cloud: CLOUD,
+  fog: '<g stroke="#ccc" stroke-width="4" stroke-linecap="round"><path d="M10 24h44M6 34h52M12 44h40"/></g>',
+  drizzle: '<g transform="translate(0 -8)">' + CLOUD + '</g>' + drops('#6ab0ff', '<path d="M24 50v4M36 50v4M30 56v4"/>'),
+  rain: '<g transform="translate(0 -8)">' + CLOUD + '</g>' + drops('#6ab0ff', '<path d="M22 48l-3 9M32 48l-3 9M42 48l-3 9"/>'),
+  snow: '<g transform="translate(0 -8)">' + CLOUD + '</g>' + drops('#fff', '<path d="M22 50v6M19 53h6M34 50v6M31 53h6M28 57v5M25.5 59.5h5"/>'),
+  storm: '<g transform="translate(0 -8)">' + CLOUD + '</g><path d="M34 44l-8 11h7l-4 9 11-13h-7l4-7z" fill="#ffd54a"/>'
+};
+
+// WMO weather codes -> words and icon
+function describe(code) {
+  if (code === 0) return ['sunny', 'sun'];
+  if (code === 1) return ['mostly sunny', 'partsun'];
+  if (code === 2) return ['partly cloudy', 'partsun'];
+  if (code === 3) return ['cloudy', 'cloud'];
+  if (code === 45 || code === 48) return ['foggy', 'fog'];
+  if (code >= 51 && code <= 57) return ['drizzly', 'drizzle'];
+  if (code >= 61 && code <= 67) return ['rainy', 'rain'];
+  if (code >= 71 && code <= 77) return ['snowy', 'snow'];
+  if (code >= 80 && code <= 82) return ['showery', 'rain'];
+  if (code === 85 || code === 86) return ['snowy', 'snow'];
+  if (code >= 95) return ['stormy', 'storm'];
+  return null;
+}
+
+function period(h) {
+  if (h >= 5 && h < 12) return 'in the morning';
+  if (h >= 12 && h < 17) return 'in the afternoon';
+  if (h >= 17 && h < 21) return 'in the evening';
+  return 'at night';
+}
+
+function ymd(d) {
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+
+var shownMinute = -1, weatherDay = '', lastFetch = 0;
+
+function render() {
+  var now = new Date(), h = now.getHours(), m = now.getMinutes();
+  if (m !== shownMinute) {
+    shownMinute = m;
+    var h12 = h % 12 || 12, ampm = h < 12 ? 'am' : 'pm';
+    document.getElementById('day').textContent = DAYS[now.getDay()];
+    document.getElementById('time').innerHTML =
+      'It is <b>' + h12 + ':' + ('0' + m).slice(-2) + ' ' + ampm + '</b><br>' + period(h) + '.';
+  }
+  // Hide yesterday's weather after midnight, and refetch every 30 minutes.
+  if (weatherDay && weatherDay !== ymd(now)) showWeather(null);
+  if (Date.now() - lastFetch > 30 * 60 * 1000 || (!weatherDay && Date.now() - lastFetch > 60 * 1000)) fetchWeather();
+}
+
+function showWeather(w) {
+  var box = document.getElementById('weather');
+  var d = w && describe(w.code);
+  if (!d) { box.hidden = true; weatherDay = ''; return; }
+  weatherDay = w.day;
+  document.getElementById('wtext').textContent = 'The weather today is ' + d[0] + '.';
+  document.getElementById('icon').innerHTML = '<svg viewBox="0 0 64 64">' + ICONS[d[1]] + '</svg>';
+  document.getElementById('temp').textContent = typeof w.temp === 'number' ? Math.round(w.temp) + '\u00B0F' : '';
+  box.hidden = false;
+}
+
+function fetchWeather() {
+  lastFetch = Date.now();
+  fetch(API).then(function (r) { return r.json(); }).then(function (j) {
+    var w = { day: j.daily.time[0], code: j.daily.weather_code[0], temp: j.current.temperature_2m };
+    if (w.day !== ymd(new Date())) return;
+    localStorage.setItem('weather', JSON.stringify(w));
+    showWeather(w);
+  }).catch(function () {});
+}
+
+try {
+  var cached = JSON.parse(localStorage.getItem('weather') || 'null');
+  if (cached && cached.day === ymd(new Date())) showWeather(cached);
+} catch (e) {}
+lastFetch = 0;
+render();
+setInterval(render, 1000);
+</script>
+</body>
+</html>
