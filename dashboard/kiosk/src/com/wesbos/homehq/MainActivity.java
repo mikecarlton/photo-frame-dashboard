@@ -22,6 +22,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.text.InputType;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -36,6 +38,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -43,7 +46,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import org.json.JSONObject;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -77,6 +84,9 @@ public class MainActivity extends Activity {
   static final String PREF_URL = "url";
   static final String PREF_MENU_BUTTON = "menu_button";
   static final String PREF_BOOTANIM_EXIT = "bootanim_exit";
+  static final String PREF_CARER = "carer";
+  static final String PREF_CARERS = "carers";
+  static final String DEFAULT_CARERS = "Arlyn\nCecile\nMaria\nPamela\nKindily";
   static final long EXIT_HOLD_MS = 1500;
   static final int CANCEL_POINTER_IDS = 10; // touch ids 0-9
   static final long RETRY_MS = 5000;
@@ -183,11 +193,13 @@ public class MainActivity extends Activity {
       cancelPageTouches();
       new AlertDialog.Builder(MainActivity.this)
           .setTitle("Home HQ")
-          .setItems(new String[] {"Open launcher", "Android settings", "Wi-Fi settings", "Reload dashboard"},
+          .setItems(new String[] {"Choose carer", "Open launcher", "Android settings", "Wi-Fi settings",
+                  "Reload dashboard"},
               (dialog, which) -> {
-                if (which == 0) openLauncher();
-                else if (which == 1) startActivity(new Intent(Settings.ACTION_SETTINGS));
-                else if (which == 2) openWifiSettings();
+                if (which == 0) chooseCarer();
+                else if (which == 1) openLauncher();
+                else if (which == 2) startActivity(new Intent(Settings.ACTION_SETTINGS));
+                else if (which == 3) openWifiSettings();
                 else web.reload();
               })
           .setNegativeButton("Back to dashboard", null).show();
@@ -239,6 +251,7 @@ public class MainActivity extends Activity {
           offline.setVisibility(View.GONE);
           handler.removeCallbacks(stall);
         }
+        pushCarer();
       }
 
       @Override
@@ -825,6 +838,55 @@ public class MainActivity extends Activity {
     handler.removeCallbacksAndMessages(null);
     if (web != null) web.destroy();
     super.onDestroy();
+  }
+
+  /** Picks today's carer from a saved list; the last entry adds a name. */
+  private void chooseCarer() {
+    final List<String> names = new ArrayList<>(Arrays.asList(
+        getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_CARERS, DEFAULT_CARERS).split("\n")));
+    String[] items = names.toArray(new String[names.size() + 1]);
+    items[names.size()] = "Add a name...";
+    new AlertDialog.Builder(this)
+        .setTitle("Who is the carer today?")
+        .setItems(items, (dialog, which) -> {
+          if (which == names.size()) addCarer(names);
+          else setCarer(names.get(which));
+        })
+        .setNegativeButton("Cancel", null).show();
+  }
+
+  private void addCarer(List<String> names) {
+    final EditText input = new EditText(this);
+    input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+    input.setSingleLine(true);
+    AlertDialog d = new AlertDialog.Builder(this)
+        .setTitle("Add a carer")
+        .setView(input)
+        .setPositiveButton("Add", (dialog, which) -> {
+          String name = input.getText().toString().trim();
+          if (name.isEmpty()) return;
+          if (!names.contains(name)) {
+            names.add(name);
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(PREF_CARERS, TextUtils.join("\n", names)).apply();
+          }
+          setCarer(name);
+        })
+        .setNegativeButton("Cancel", null).create();
+    d.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+    d.show();
+  }
+
+  private void setCarer(String name) {
+    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_CARER, name).apply();
+    Log.i(TAG, "Carer: " + name);
+    pushCarer();
+  }
+
+  /** Hands the saved carer to the page, if it defines window.setCarer. */
+  private void pushCarer() {
+    String name = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_CARER, "");
+    web.evaluateJavascript("window.setCarer && window.setCarer(" + JSONObject.quote(name) + ")", null);
   }
 
   /** Remote debugging only when explicitly requested; any normal launch turns it back off. */

@@ -11,25 +11,28 @@
     display: flex; flex-direction: column; justify-content: center; align-items: center;
     text-align: center; cursor: none; user-select: none;
   }
-  .label { font-size: 5vw; color: #bbb; }
-  #day { font-size: 15vw; font-weight: 700; line-height: 1; margin: 0.5vh 0 4vh; }
-  #time { font-size: 6vw; line-height: 1.25; }
-  #time b { color: #ffd54a; font-weight: 700; }
-  #weather { display: flex; align-items: center; gap: 2.5vw; margin-top: 5vh; font-size: 4.6vw; }
-  #weather[hidden] { display: none; }
-  #temp { font-weight: 700; }
-  #icon svg { width: 10vw; height: 10vw; display: block; }
+  .label { font-size: 4.2vw; color: #bbb; }
+  #day { font-size: 12vw; font-weight: 700; line-height: 1; margin: 0.5vh 0 1vh; }
+  #place { font-size: 4.2vw; color: #bbb; margin-bottom: 4vh; }
+  #time { font-size: 5.4vw; }
+  b { color: #ffd54a; font-weight: 700; }
+  #weather { display: flex; align-items: center; gap: 2vw; margin-top: 3vh; font-size: 4.4vw; }
+  #icon svg { width: 8vw; height: 8vw; display: block; }
+  #carer { font-size: 4.4vw; margin-top: 3vh; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
   <div class="label">Today is</div>
   <div id="day"></div>
+  <div id="place"></div>
   <div id="time"></div>
-  <div id="weather" hidden><span id="wtext"></span><span id="icon"></span><span id="temp"></span></div>
+  <div id="weather" hidden><span id="wtext"></span><span id="icon"></span></div>
+  <div id="carer" hidden></div>
 
 <script>
 'use strict';
-var LAT = 53.30, LON = -6.27;
+var PLACE = 'Dublin, Ireland', LAT = 53.30, LON = -6.27;
 var API = 'http://api.open-meteo.com/v1/forecast?latitude=' + LAT + '&longitude=' + LON +
   '&daily=weather_code&current=temperature_2m&temperature_unit=fahrenheit&timezone=auto&forecast_days=1';
 var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -85,10 +88,10 @@ function render() {
   var now = new Date(), h = now.getHours(), m = now.getMinutes();
   if (m !== shownMinute) {
     shownMinute = m;
-    var h12 = h % 12 || 12, ampm = h < 12 ? 'am' : 'pm';
+    var h12 = h % 12 || 12, ampm = h < 12 ? 'AM' : 'PM';
     document.getElementById('day').textContent = DAYS[now.getDay()];
     document.getElementById('time').innerHTML =
-      'It is <b>' + h12 + ':' + ('0' + m).slice(-2) + ' ' + ampm + '</b><br>' + period(h) + '.';
+      'It is <b>' + h12 + ':' + ('0' + m).slice(-2) + ' ' + ampm + '</b> ' + period(h) + '.';
   }
   // Hide yesterday's weather after midnight, and refetch every 30 minutes.
   if (weatherDay && weatherDay !== ymd(now)) showWeather(null);
@@ -100,9 +103,9 @@ function showWeather(w) {
   var d = w && describe(w.code);
   if (!d) { box.hidden = true; weatherDay = ''; return; }
   weatherDay = w.day;
-  document.getElementById('wtext').textContent = 'The weather today is ' + d[0] + '.';
+  var temp = typeof w.temp === 'number' ? '<b>' + Math.round(w.temp) + '\u00B0F</b> and ' : '';
+  document.getElementById('wtext').innerHTML = 'The weather today is ' + temp + d[0] + '.';
   document.getElementById('icon').innerHTML = '<svg viewBox="0 0 64 64">' + ICONS[d[1]] + '</svg>';
-  document.getElementById('temp').textContent = typeof w.temp === 'number' ? Math.round(w.temp) + '\u00B0F' : '';
   box.hidden = false;
 }
 
@@ -115,6 +118,22 @@ function fetchWeather() {
     showWeather(w);
   }).catch(function () {});
 }
+
+// Called by the kiosk app with the carer chosen from its two-finger menu.
+window.setCarer = function (name) {
+  var el = document.getElementById('carer');
+  el.textContent = '';
+  if (name) {
+    var b = document.createElement('b');
+    b.textContent = name;
+    el.appendChild(document.createTextNode('Your carer today is '));
+    el.appendChild(b);
+    el.appendChild(document.createTextNode('.'));
+  }
+  el.hidden = !name;
+};
+
+document.getElementById('place').textContent = 'In ' + PLACE;
 
 try {
   var cached = JSON.parse(localStorage.getItem('weather') || 'null');
